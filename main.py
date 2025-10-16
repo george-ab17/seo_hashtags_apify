@@ -131,12 +131,9 @@ def main(url, provided_keywords=None):
         "apify_trending_hashtags": trending_hashtags
     }
 
-    # Step 7: Save JSON
+    # Step 7: Save JSON and return result
     save_json(result)
-
-    # Also print to console
-    import json
-    print(json.dumps(result, indent=4, ensure_ascii=False))
+    return result
 
 if __name__ == "__main__":
     # Load environment variables
@@ -148,4 +145,7 @@ if __name__ == "__main__":
         user_keywords = [kw.strip() for kw in keywords_input.split(",")]
     else:
         user_keywords = None
-    main(url, user_keywords)
+    result = main(url, user_keywords)
+    # Print result to console
+    import json
+    print(json.dumps(result, indent=4, ensure_ascii=False))
