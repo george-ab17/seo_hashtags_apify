@@ -123,7 +123,7 @@
                 </div>
             </div>
             <div class="d-flex gap-2 mt-4">
-                <button id="runButton" class="btn btn-primary btn-sm" style="font-size:12px; padding:6px 18px; border-radius:8px; min-width:120px;"><i class="fas fa-magic"></i> Generate Hashtags</button>
+                <button id="runButton" class="btn btn-primary btn-sm" style="font-size:12px; padding:6px 18px; border-radius:8px; min-width:120px;"><i class="fas fa-pen"></i> Generate Hashtags</button>
                 <button id="downloadJsonBtn" class="btn btn-primary btn-sm d-none" style="font-size:12px; padding:6px 18px; border-radius:8px;"><i class="fas fa-download"></i> Download JSON</button>
                 <button id="copyhashtagsBtn" class="btn btn-primary btn-sm d-none" style="font-size:12px; padding:6px 18px; border-radius:8px;"><i class="fas fa-copy"></i> Copy Hashtags</button>
             </div>
@@ -137,7 +137,7 @@
 
         <div id="resultsSection" class="d-none">
             <div class="bg-dark text-white p-3 rounded-top">
-                <h5 class="mb-0"><i class="fas fa-hashtag"></i> Generated Hashtags</h5>
+                <h5 class="mb-0"><i class="fas fa-pen"></i> Generated Hashtags</h5>
             </div>
             <div class="card p-4">
                 <div id="keywordsContainer" class="mb-4">
@@ -221,7 +221,7 @@
                 result.used_keywords.forEach((keyword, i) => {
                     const badge = document.createElement('span');
                     badge.className = 'hashtag-badge';
-                    badge.innerHTML = `<i class="fas fa-tag"></i> ${keyword}`;
+                    badge.innerHTML = `<i class="fas fa-pen"></i> ${keyword}`;
                     keywordsList.appendChild(badge);
                 });
             } else {
@@ -234,8 +234,9 @@
                 result.apify_trending_hashtags.forEach((hashtag, i) => {
                     const badge = document.createElement('span');
                     badge.className = 'hashtag-badge';
-                    const hashtagText = hashtag.startsWith('#') ? hashtag : '#' + hashtag;
-                    badge.textContent = hashtagText;
+                    // Remove leading '#' for display and use an icon instead
+                    const displayText = hashtag.startsWith('#') ? hashtag.slice(1) : hashtag;
+                    badge.innerHTML = `<i class="fas fa-pen"></i> ${displayText}`;
                     hashtagsList.appendChild(badge);
                 });
             } else {
@@ -259,7 +260,8 @@
 
         document.getElementById('copyhashtagsBtn').addEventListener('click', () => {
             if (!currentResults || !currentResults.apify_trending_hashtags) return;
-            const hashtags = currentResults.apify_trending_hashtags.join(' ');
+            // Copy without leading '#'
+            const hashtags = currentResults.apify_trending_hashtags.map(h => h.startsWith('#') ? h.slice(1) : h).join(' ');
             navigator.clipboard.writeText(hashtags).then(() => {
                 alert('Hashtags copied to clipboard!');
             }).catch(err => {
