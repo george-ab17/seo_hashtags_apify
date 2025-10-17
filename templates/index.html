@@ -113,7 +113,7 @@
             <div class="row g-3">
                 <div class="col-md-12 col-lg-6">
                     <label for="urlInput" class="form-label fw-semibold"><i class="fas fa-globe"></i> Target Website URL</label>
-                    <input type="url" id="urlInput" class="form-control" placeholder="https://example.com" style="height: 38px; border-radius: 8px;" />
+                    <input type="url" id="urlInput" class="form-control" placeholder="https://example.com" style="height: 38px; border-radius: 8px;" oninput="validateForm()" />
                     <small class="text-muted">Enter your website URL to analyze</small>
                 </div>
                 <div class="col-md-12 col-lg-6">
@@ -123,8 +123,9 @@
                 </div>
             </div>
             <div class="d-flex gap-2 mt-4">
-                <button id="runButton" class="btn btn-primary btn-sm" style="font-size:12px; padding:6px 18px; border-radius:8px; min-width:120px;"><i class="fas fa-pen"></i> Generate Hashtags</button>
+                <button id="runButton" class="btn btn-primary btn-sm" disabled style="font-size:12px; padding:6px 18px; border-radius:8px; min-width:120px;"><i class="fas fa-pen"></i> Generate Hashtags</button>
                 <button id="downloadJsonBtn" class="btn btn-primary btn-sm d-none" style="font-size:12px; padding:6px 18px; border-radius:8px;"><i class="fas fa-download"></i> Download JSON</button>
+                <button id="downloadPdfBtn" class="btn btn-primary btn-sm d-none" style="font-size:12px; padding:6px 18px; border-radius:8px;"><i class="fas fa-file-pdf"></i> Download PDF</button>
                 <button id="copyhashtagsBtn" class="btn btn-primary btn-sm d-none" style="font-size:12px; padding:6px 18px; border-radius:8px;"><i class="fas fa-copy"></i> Copy Hashtags</button>
             </div>
         </div>
@@ -132,7 +133,7 @@
         <div id="loadingSection" class="text-center d-none">
             <div class="spinner-border text-primary" role="status"></div>
             <p class="fw-semibold mt-2">Generating hashtags...</p>
-            <small class="text-muted">This may take up to 30 seconds</small>
+            <small class="text-muted">Please wait while we process your request</small>
         </div>
 
         <div id="resultsSection" class="d-none">
@@ -156,8 +157,24 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- For PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script>
         let currentResults = null;
+
+        function validateForm() {
+            const urlInput = document.getElementById('urlInput');
+            const runButton = document.getElementById('runButton');
+            const url = urlInput.value.trim();
+            
+            // Enable button only if URL is not empty and is valid
+            if (url && url.match(/^(http|https):\/\/[^ "]+$/)) {
+                runButton.disabled = false;
+            } else {
+                runButton.disabled = true;
+            }
+        }
 
         function logout() {
             fetch('/api/auth/logout', { method: 'POST' })
@@ -207,12 +224,14 @@
         function displayResults(result) {
             const resultsSection = document.getElementById('resultsSection');
             const downloadJsonBtn = document.getElementById('downloadJsonBtn');
+            const downloadPdfBtn = document.getElementById('downloadPdfBtn');
             const copyHashtagsBtn = document.getElementById('copyhashtagsBtn');
             const keywordsList = document.getElementById('keywordsList');
             const hashtagsList = document.getElementById('hashtagsList');
 
             resultsSection.classList.remove('d-none');
             downloadJsonBtn.classList.remove('d-none');
+            downloadPdfBtn.classList.remove('d-none');
             copyHashtagsBtn.classList.remove('d-none');
 
             // Display keywords
@@ -234,9 +253,9 @@
                 result.apify_trending_hashtags.forEach((hashtag, i) => {
                     const badge = document.createElement('span');
                     badge.className = 'hashtag-badge';
-                    // Remove leading '#' for display and use an icon instead
-                    const displayText = hashtag.startsWith('#') ? hashtag.slice(1) : hashtag;
-                    badge.innerHTML = `<i class="fas fa-pen"></i> ${displayText}`;
+                    // Ensure display includes leading '#'
+                    const displayText = hashtag.startsWith('#') ? hashtag : '#' + hashtag;
+                    badge.textContent = displayText;
                     hashtagsList.appendChild(badge);
                 });
             } else {
@@ -258,10 +277,105 @@
             URL.revokeObjectURL(url);
         });
 
+        document.getElementById('downloadPdfBtn').addEventListener('click', async () => {
+            if (!currentResults) return alert('No results to export');
+            try {
+                // Create a temporary div to hold the styled content
+                const tempDiv = document.createElement('div');
+                tempDiv.className = 'card p-4';
+                tempDiv.style.backgroundColor = '#fff';
+                tempDiv.style.maxWidth = '800px';
+                tempDiv.style.margin = '20px auto';
+                tempDiv.style.fontFamily = "'Inter', sans-serif";
+
+                // Add title section
+                const titleSection = document.createElement('div');
+                titleSection.className = 'bg-dark text-white p-3 rounded';
+                titleSection.innerHTML = '<h5 class="mb-0"><i class="fas fa-hashtag"></i> Hashtag Generation Report</h5>';
+                tempDiv.appendChild(titleSection);
+
+                // Add URL section
+                const urlSection = document.createElement('div');
+                urlSection.className = 'mt-4';
+                urlSection.innerHTML = `
+                    <h6 class="fw-semibold mb-2"><i class="fas fa-globe"></i> Target URL</h6>
+                    <div class="badge-container">
+                        <span class="hashtag-badge">${currentResults.url}</span>
+                    </div>
+                `;
+                tempDiv.appendChild(urlSection);
+
+                // Add keywords section
+                const keywordsSection = document.createElement('div');
+                keywordsSection.className = 'mt-4';
+                keywordsSection.innerHTML = `
+                    <h6 class="fw-semibold mb-2"><i class="fas fa-key"></i> Keywords</h6>
+                    <div class="badge-container">
+                        ${currentResults.used_keywords && currentResults.used_keywords.length > 0 
+                          ? currentResults.used_keywords.map(k => `<span class="hashtag-badge"><i class="fas fa-pen"></i> ${k}</span>`).join('')
+                          : '<span class="text-muted">No keywords provided</span>'}
+                    </div>
+                `;
+                tempDiv.appendChild(keywordsSection);
+
+                // Add hashtags section
+                const hashtagsSection = document.createElement('div');
+                hashtagsSection.className = 'mt-4';
+                hashtagsSection.innerHTML = `
+                    <h6 class="fw-semibold mb-2"><i class="fas fa-star"></i> Top Trending Hashtags</h6>
+                    <div class="badge-container">
+                        ${currentResults.apify_trending_hashtags && currentResults.apify_trending_hashtags.length > 0
+                          ? currentResults.apify_trending_hashtags.map(h => `<span class="hashtag-badge">${h.startsWith('#') ? h : '#' + h}</span>`).join('')
+                          : '<span class="text-muted">No hashtags generated</span>'}
+                    </div>
+                `;
+                tempDiv.appendChild(hashtagsSection);
+
+                // Add timestamp at the bottom
+                const timestampSection = document.createElement('div');
+                timestampSection.className = 'mt-4 text-muted small';
+                timestampSection.innerHTML = `Generated: ${new Date().toLocaleString()}`;
+                tempDiv.appendChild(timestampSection);
+
+                // Temporarily add to document to capture
+                document.body.appendChild(tempDiv);
+
+                // Capture the styled content
+                const canvas = await html2canvas(tempDiv, { 
+                    scale: 2,
+                    backgroundColor: '#fff',
+                    logging: false
+                });
+
+                // Remove temporary element
+                document.body.removeChild(tempDiv);
+
+                // Create PDF with the captured image
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF({
+                    orientation: 'portrait',
+                    unit: 'pt',
+                    format: 'a4'
+                });
+
+                const pageWidth = pdf.internal.pageSize.getWidth();
+                const pageHeight = pdf.internal.pageSize.getHeight();
+                const imgWidth = pageWidth - 40; // margins
+                const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+                pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 20, 20, imgWidth, imgHeight);
+                pdf.save('hashtags_result.pdf');
+
+            } catch (err) {
+                console.error(err);
+                alert('Failed to generate PDF: ' + err.message);
+            }
+        });
+
         document.getElementById('copyhashtagsBtn').addEventListener('click', () => {
             if (!currentResults || !currentResults.apify_trending_hashtags) return;
-            // Copy without leading '#'
-            const hashtags = currentResults.apify_trending_hashtags.map(h => h.startsWith('#') ? h.slice(1) : h).join(' ');
+            // Copy with leading '#'
+            const hashtags = currentResults.apify_trending_hashtags.map(h => h.startsWith('#') ? h : ('#' + h)).join(' ');
             navigator.clipboard.writeText(hashtags).then(() => {
                 alert('Hashtags copied to clipboard!');
             }).catch(err => {
