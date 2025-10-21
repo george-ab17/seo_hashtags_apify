@@ -15,61 +15,119 @@ def generate_hashtags(keywords):
         keywords, content = keywords
     else:
         content = ""
+    # Stronger, constrained prompt that instructs the model to stay grounded in the provided
+    # keywords/content. We ask for comma-separated hashtags and emphasize not inventing
+    # unrelated or generic tags. We also request the model return only the hashtags.
     prompt = f"""
-You are an expert SEO auditor and social media strategist working to meet company standards for digital marketing.
-Your task is to generate 20 unique, professional, SEO-friendly, and currently trending hashtags for a company SEO audit report.
+You are an expert SEO auditor and social media strategist. Your only job is to produce
+hashtags that are directly derived from the provided Keywords and Page Content. DO NOT
+invent unrelated industry terms or generic marketing buzzwords that are not grounded in the
+input. Use exact keyword words or short, safe variants of those words (e.g., remove spaces,
+use CamelCase) and prefer tokens that appear in the Page Content.
 
-Guidelines:
-- Focus on hashtags that are highly relevant to the provided keywords and page content.
-- All hashtags must be suitable for a company or enterprise context (no slang, no generic terms like #business or #data).
-- Prefer hashtags that are currently trending in the SEO, analytics, automation, and digital transformation domains.
-- Avoid generic, unrelated, or overused hashtags.
-- Each hashtag should be concise, easy to read, and follow company branding standards.
-- Output exactly 20 hashtags, separated by commas, with no extra text.
+Requirements:
+- Return only hashtags, separated by commas, with NO extra commentary.
+- Use at most one or two short variations per keyword (e.g., "#Keyword", "#KeywordTips").
+- Do not include slang, emojis, or unrelated trending topics.
+- If you cannot find 20 grounded hashtags, return as many grounded hashtags as possible.
 
-Few-shot examples:
-Input: Keywords: SEO Audit, Digital Marketing, Analytics
-Page Content: This page is about enterprise SEO audits and digital marketing analytics for large companies.
-Output: #SEOAudit, #DigitalMarketing, #EnterpriseSEO, #MarketingAnalytics, #CompanySEO, #SEOStandards, #AuditReport, #DigitalStrategy, #AnalyticsForBusiness, #CorporateSEO, #SEOCompliance, #SEOInsights, #SEOConsulting, #SEOOptimization, #SEOReview, #SEOExperts, #SEOEnterprise, #SEOAnalysis, #SEOReporting, #SEOTrends
-
-Input: Keywords: Process Automation, Workflow Optimization
-Page Content: This page covers process automation and workflow optimization for business efficiency.
-Output: #ProcessAutomation, #WorkflowOptimization, #BusinessEfficiency, #AutomationStrategy, #WorkflowAutomation, #ProcessImprovement, #BusinessAutomation, #OperationalExcellence, #AutomationSolutions, #WorkflowManagement, #ProcessOptimization, #DigitalAutomation, #AutomationTrends, #BusinessProcess, #EfficiencyExperts, #ProcessInnovation, #AutomationConsulting, #WorkflowExperts, #ProcessExcellence, #AutomationForBusiness
-
-Input: Keywords: Infosys, Digital Services, Consulting
-Page Content: Infosys Limited is a global leader in next-generation digital services and consulting. The company enables clients in 50 countries to navigate their digital transformation.
-Output: #Infosys, #DigitalServices, #ITConsulting, #GlobalIT, #DigitalTransformation, #NextGenIT, #BusinessConsulting, #TechSolutions, #ITOutsourcing, #EnterpriseIT, #DigitalInnovation, #ITStrategy, #ConsultingExperts, #ITGlobal, #DigitalConsulting, #ITLeaders, #TechConsulting, #ITForBusiness, #InnovationLeaders, #ITClients
-
-Input: Keywords: Cloud Computing, Artificial Intelligence, Cybersecurity
-Page Content: The company specializes in cloud computing, artificial intelligence, and cybersecurity solutions for enterprise clients.
-Output: #CloudComputing, #ArtificialIntelligence, #Cybersecurity, #EnterpriseTech, #CloudSolutions, #AISolutions, #CybersecurityServices, #ITSecurity, #DigitalSecurity, #CloudInfrastructure, #AIForBusiness, #EnterpriseCybersecurity, #TechConsulting, #SecureCloud, #CloudExperts, #AIEdge, #CloudSecurity, #AIDriven, #EnterpriseSolutions, #TechInnovation
-
-Input: Keywords: Robotic Process Automation, Financial Services
-Page Content: This report covers the implementation of robotic process automation (RPA) and workflow optimization in financial services.
-Output: #RoboticProcessAutomation, #RPA, #WorkflowOptimization, #FinancialServices, #ProcessAutomation, #AutomationImplementation, #FinanceAutomation, #WorkflowManagement, #RPASolutions, #BusinessProcessAutomation, #AutomationStrategy, #Fintech, #WorkflowImprovement, #RPADriven, #FinanceWorkflow, #AutomationForFinance, #ProcessInnovation, #FinanceTech, #RPAExperts, #AutomationConsulting
-
-Input:
 Keywords:
 {', '.join(keywords)}
+
 Page Content:
 {content}
+
 Output:
 """
+    def _clean_hashtag(raw):
+        s = raw.strip()
+        if not s:
+            return None
+        # remove surrounding quotes
+        s = s.strip("'\"")
+        # ensure leading '#'
+        if not s.startswith('#'):
+            s = '#' + s
+        # remove spaces and illegal chars, keep letters/numbers
+        import re
+        body = re.sub(r'[^0-9A-Za-z]', '', s.lstrip('#'))
+        if not body:
+            return None
+        # CamelCase the hashtag for readability
+        body = ''.join(part.capitalize() for part in re.split(r'\s+|[-_]', body))
+        return '#' + body
+
+    def _keywords_tokens(keywords_list):
+        toks = set()
+        import re
+        for k in keywords_list:
+            if not isinstance(k, str):
+                continue
+            for w in re.findall(r"[A-Za-z0-9]{3,}", k):
+                toks.add(w.lower())
+        return toks
+
     try:
         model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content(prompt, generation_config={"temperature": 0})
-        hashtags = [tag.strip().replace(' ', '') if tag.strip().startswith('#') else '#' + tag.strip().replace(' ', '') for tag in response.text.split(",") if tag.strip()]
-        return hashtags[:20]
+        raw_tags = [t for t in response.text.split(',')]
+        cleaned = []
+        for rt in raw_tags:
+            h = _clean_hashtag(rt)
+            if h and h not in cleaned:
+                cleaned.append(h)
+
+        # Validate grounding: at least some hashtags should contain tokens from keywords
+        kw_tokens = _keywords_tokens(keywords)
+        def _matches_keywords(hashtag):
+            low = hashtag.lstrip('#').lower()
+            for t in kw_tokens:
+                if t in low:
+                    return True
+            return False
+
+        matched = sum(1 for h in cleaned if _matches_keywords(h))
+        # If too few matches, fallback to deterministic generation from keywords
+        min_needed = max(3, int(len(cleaned) * 0.3))
+        if matched < min_needed:
+            # Deterministic fallback: derive hashtags from keywords
+            derived = []
+            import re
+            for k in keywords:
+                if not isinstance(k, str):
+                    continue
+                parts = re.findall(r"[A-Za-z0-9]+", k)
+                if not parts:
+                    continue
+                body = ''.join(p.capitalize() for p in parts)
+                tag = '#' + body
+                if tag not in derived:
+                    derived.append(tag)
+                # add a safe variant if space allows
+                if len(derived) < 20:
+                    variant = '#' + body + 'Tips'
+                    if variant not in derived:
+                        derived.append(variant)
+                if len(derived) >= 20:
+                    break
+            return derived[:20]
+
+        return cleaned[:20]
     except Exception as e:
         print(f"Gemini hashtag generation error: {e}")
-        return []
-    for tag in response.text.split(","):
-        clean_tag = tag.strip().replace(' ', '')
-        # Ensure single leading '#'
-        if not clean_tag.startswith('#'):
-            clean_tag = '#' + clean_tag
-        else:
-            clean_tag = '#' + clean_tag.lstrip('#')
-        hashtags.append(clean_tag)
-    hashtags = hashtags[:20]
-    return hashtags
+        # deterministic fallback on error
+        derived = []
+        import re
+        for k in keywords:
+            if not isinstance(k, str):
+                continue
+            parts = re.findall(r"[A-Za-z0-9]+", k)
+            if not parts:
+                continue
+            body = ''.join(p.capitalize() for p in parts)
+            tag = '#' + body
+            if tag not in derived:
+                derived.append(tag)
+            if len(derived) >= 20:
+                break
+        return derived[:20]
