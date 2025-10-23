@@ -126,22 +126,22 @@ def generate_hashtags_api():
         hashtags_gemini = generate_hashtags((keywords, content))
         hashtags_gemini = [normalize_item(h) for h in hashtags_gemini]
 
-        print('\n=== Pipeline inputs (pre-Apify) ===')
-        print('Extracted keywords (normalized):')
+        print('\n=== Pipeline inputs ===')
+        print('Extracted keywords:')
         for i, k in enumerate(keywords, 1):
             print(f"  {i}. {k}")
-        print('\nGemini-generated hashtags (normalized):')
+        print('\nGemini-generated hashtags:')
         for i, h in enumerate(hashtags_gemini, 1):
             print(f"  {i}. {h}")
 
-        # Step 4: Use Apify to get trending hashtags only for Gemini-generated hashtags
+        # Step 4: Use Apify to validate only the Gemini-generated hashtags
         apify_key = os.getenv("APIFY_API_TOKEN")
         trending_hashtags = []
         if apify_key:
-            # Only use Gemini-generated hashtags for trending search
-            query_list = [h.strip('#') for h in hashtags_gemini if isinstance(h, str) and h.strip()]
+            # Only use Gemini hashtags for Apify validation
+            query_list = [h.strip() for h in hashtags_gemini if isinstance(h, str) and h.strip()]
             
-            print('\nQueries to be sent to Apify (from Gemini hashtags):')
+            print('\nSending Gemini hashtags to Apify for validation:')
             for i, q in enumerate(query_list, 1):
                 print(f"  {i}. {q}")
 

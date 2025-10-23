@@ -117,19 +117,21 @@ def get_trending_hashtags_for_list(hashtags, num_results=1):
     hashtag_pattern = re.compile(r"#\w+")
     trending = set()
 
-    # Normalize and dedupe input into a stable list
+    # Only process hashtags from Gemini, not keywords
     normalized = []
     seen = set()
     for item in hashtags:
-        q = normalize_query_item(item)
-        if not q:
-            continue
-        q = q.strip()
-        if not q:
-            continue
-        if q not in seen:
-            seen.add(q)
-            normalized.append(q)
+        # Only process items that start with '#' since we only want hashtags from Gemini
+        if isinstance(item, str) and item.startswith('#'):
+            q = normalize_query_item(item)
+            if not q:
+                continue
+            q = q.strip()
+            if not q:
+                continue
+            if q not in seen:
+                seen.add(q)
+                normalized.append(q)
 
     total_queries = len(normalized)
     if total_queries == 0:

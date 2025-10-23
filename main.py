@@ -67,31 +67,18 @@ def main(url, provided_keywords=None):
 
     # --- Debug: show pipeline inputs ---
     print('\n=== Pipeline inputs (pre-Apify) ===')
-    print('Extracted keywords (normalized):')
+    print('Extracted keywords :')
     for i, k in enumerate(keywords, 1):
         print(f"  {i}. {k}")
 
-    print('\nGemini-generated hashtags (normalized):')
-    for i, h in enumerate(hashtags_gemini, 1):
-        print(f"  {i}. {h}")
-
-    # Step 4: Use Apify to get all trending hashtags for all keywords and Gemini hashtags
+    # Step 4: Use Apify to validate only the Gemini-generated hashtags
     apify_key = os.getenv("APIFY_API_TOKEN")
     trending_hashtags = []
     if apify_key:
-        # Combine, filter empty, dedupe, and ensure readable strings
-        combined = [q for q in (keywords + hashtags_gemini) if isinstance(q, str) and q.strip()]
-        # Deduplicate while preserving readability
-        seen = set()
-        query_list = []
-        for q in combined:
-            nq = q.strip()
-            if nq not in seen:
-                seen.add(nq)
-                query_list.append(nq)
-
-        # Debug: show final query list that will be processed by Apify
-        print('\nQueries to be sent to Apify (normalized + deduped):')
+        # Only use Gemini hashtags for Apify validation
+        query_list = [h.strip() for h in hashtags_gemini if isinstance(h, str) and h.strip()]
+        
+        print('\nSending Gemini hashtags to Apify for validation:')
         for i, q in enumerate(query_list, 1):
             print(f"  {i}. {q}")
 
