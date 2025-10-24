@@ -6,17 +6,10 @@ import json
 from datetime import datetime
 
 # Import your hashtag generation modules
-from scraper import scrape_url
 from keyword_extractor import extract_keywords
 from hashtag_generator import generate_hashtags
 from apify_trending_for_hashtags import get_trending_hashtags_for_list
 import google.generativeai as genai
-
-# Optional fallback scraper
-try:
-    from fallback_scraper import scrape_url_fallback
-except Exception:
-    scrape_url_fallback = None
 
 # Load environment variables
 load_dotenv()
@@ -54,17 +47,17 @@ def normalize_item(item):
     return str(item)
 
 def select_top_hashtags(trending_hashtags, keywords, content):
-    """Use Gemini LLM to select top 20 most relevant hashtags"""
+    """Use Gemini LLM to select top 5 most relevant hashtags for the given topic"""
     prompt = (
         "You are an expert SEO auditor and social media strategist.\n"
-        "Given the following list of trending hashtags, keywords, and company page content, "
-        "select the 20 most relevant, currently trending hashtags for a company SEO audit report.\n"
-        "All hashtags must meet company standards: professional, SEO-friendly, and suitable for enterprise use.\n"
-        "Avoid generic, unrelated, or overused hashtags.\n"
+        "Given the following list of trending hashtags, keywords, and topic, "
+        "select the 5 most relevant, currently trending hashtags.\n"
+        "All hashtags must meet professional standards: SEO-friendly and suitable for enterprise use.\n"
+        "Choose only the most specific and impactful hashtags.\n"
         "Return only the hashtags, separated by commas, no extra text.\n\n"
         f"Trending Hashtags:\n{', '.join(trending_hashtags)}\n\n"
         f"Keywords:\n{', '.join(keywords)}\n\n"
-        f"Page Content:\n{content}\n"
+        f"Topic:\n{content}\n"
     )
     try:
         model = genai.GenerativeModel('gemini-2.5-flash')
@@ -74,10 +67,10 @@ def select_top_hashtags(trending_hashtags, keywords, content):
             else '#' + tag.strip().replace(' ', '') 
             for tag in response.text.split(",") if tag.strip()
         ]
-        return hashtags_llm[:20]
+        return hashtags_llm[:5]
     except Exception as e:
         print(f"Gemini LLM hashtag selection error: {e}")
-        return trending_hashtags[:20]
+        return trending_hashtags[:5]
 
 @app.route('/')
 def index():
@@ -89,29 +82,17 @@ def generate_hashtags_api():
     """API endpoint for generating hashtags"""
     try:
         data = request.get_json()
-        url = data.get('url', '').strip()
+        topic = data.get('topic', '').strip()
         provided_keywords = data.get('provided_keywords')
 
-        # Validate URL
-        if not url:
-            return jsonify({"error": "URL is required"}), 400
+        # Validate topic
+        if not topic:
+            return jsonify({"error": "Topic is required"}), 400
 
-        print(f"\n[INFO] Processing URL: {url}")
+        print(f"\n[INFO] Processing topic: {topic}")
 
-        # Step 1: Scrape URL
-        content = scrape_url(url)
-        if not content.strip():
-            print("[INFO] Primary scraper returned empty — attempting fallback scraper...")
-            if scrape_url_fallback:
-                try:
-                    content = scrape_url_fallback(url)
-                except Exception as e:
-                    print(f"[ERROR] Fallback scraper exception: {e}")
-            
-            if not content.strip():
-                return jsonify({
-                    "error": "No content could be scraped from the URL by either scraper. Please check the site or try another URL."
-                }), 400
+        # Use topic as content directly
+        content = topic
 
         # Step 2: Get keywords
         if provided_keywords:
@@ -157,7 +138,7 @@ def generate_hashtags_api():
 
         # Step 6: Prepare final result
         result = {
-            "url": url,
+            "topic": topic,
             "used_keywords": keywords,
             "apify_trending_hashtags": trending_hashtags,
             "timestamp": datetime.now().isoformat()

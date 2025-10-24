@@ -13,8 +13,17 @@ from apify_client import ApifyClient
 # Tune these if you need fewer/more retries or longer timeouts
 APIFY_CALL_RETRIES = 3
 APIFY_CALL_BACKOFF_SECONDS = 2
-# Max pages per query passed to the actor (keeps each actor run short)
+# Max pages/items per query passed to the actors
 MAX_PAGES_PER_QUERY = 1
+MAX_TWEETS_PER_QUERY = 10
+MAX_INSTAGRAM_POSTS = 10
+
+# Apify actor IDs
+ACTORS = {
+    'google': 'apify/google-search-scraper',
+    'twitter': 'quacker/twitter-scraper',
+    'instagram': 'apify/instagram-hashtag-scraper'
+}
 # -----------------------------------------
 
 # Minimal logging for the script; suppress noisy libraries
@@ -99,15 +108,16 @@ def normalize_query_item(tag):
 
 def get_trending_hashtags_for_list(hashtags, num_results=1):
     """
-    For each hashtag/keyword in `hashtags`, run Apify's Google Search Scraper actor,
-    extract hashtags from the actor results, and return a list of unique hashtags.
-
+    For each hashtag/keyword, search across multiple platforms using Apify actors:
+    - Google Search (for web content)
+    - Twitter/X (for social media trends)
+    
     Args:
       hashtags: iterable of strings/dicts (keywords or hashtags)
-      num_results: reserved for compatibility (not used by this actor wrapper)
+      num_results: reserved for compatibility (not used)
 
     Returns:
-      List[str] - unique hashtags found (e.g., '#AI', '#MachineLearning')
+      List[str] - unique hashtags found across all platforms (e.g., '#AI', '#MachineLearning')
     """
     api_key = os.getenv("APIFY_API_TOKEN")
     if not api_key:
@@ -115,7 +125,7 @@ def get_trending_hashtags_for_list(hashtags, num_results=1):
 
     client = ApifyClient(api_key)
     hashtag_pattern = re.compile(r"#\w+")
-    trending = set()
+    trending = {}
 
     # Only process hashtags from Gemini, not keywords
     normalized = []
@@ -150,9 +160,13 @@ def get_trending_hashtags_for_list(hashtags, num_results=1):
         processed += 1
         q_start = time.time()
 
-        # Call the actor with retries and suppress actor stdout/stderr
-        run = None
+        # Call the actors with retries and suppress stdout/stderr
+        run_google = None
+        run_twitter = None
+        run_instagram = None
         last_exc = None
+
+        # Google Search - with retries
         for attempt in range(1, APIFY_CALL_RETRIES + 1):
             try:
                 run_input = {
@@ -163,29 +177,79 @@ def get_trending_hashtags_for_list(hashtags, num_results=1):
                     "includeUnfilteredResults": True
                 }
                 with suppress_stdout_stderr():
-                    run = client.actor("apify/google-search-scraper").call(run_input=run_input)
-                last_exc = None
+                    run_google = client.actor(ACTORS['google']).call(run_input=run_input)
                 break
             except Exception as exc:
-                last_exc = exc
+                print(f"Google Search attempt {attempt} failed: {exc}")
+                if attempt == APIFY_CALL_RETRIES:
+                    print(f"Google Search failed after {APIFY_CALL_RETRIES} attempts")
                 sleep_time = APIFY_CALL_BACKOFF_SECONDS * (2 ** (attempt - 1))
                 time.sleep(sleep_time)
 
-        if last_exc and run is None:
-            print(f"Apify error for '{search_input}': {last_exc}")
+        # Twitter Search - with retries
+        for attempt in range(1, APIFY_CALL_RETRIES + 1):
+            try:
+                twitter_input = {
+                    "searchTerms": [search_phrase],
+                    "maxItems": MAX_TWEETS_PER_QUERY,
+                }
+                with suppress_stdout_stderr():
+                    run_twitter = client.actor(ACTORS['twitter']).call(run_input=twitter_input)
+                break
+            except Exception as exc:
+                print(f"Twitter Search attempt {attempt} failed: {exc}")
+                if attempt == APIFY_CALL_RETRIES:
+                    print(f"Twitter Search failed after {APIFY_CALL_RETRIES} attempts")
+                sleep_time = APIFY_CALL_BACKOFF_SECONDS * (2 ** (attempt - 1))
+                time.sleep(sleep_time)
+                    
+        
+        # Instagram Search - with retries
+        for attempt in range(1, APIFY_CALL_RETRIES + 1):
+            try:
+                instagram_input = {
+                    "hashtags": [search_phrase.replace(' ', '')],
+                    "limit": MAX_INSTAGRAM_POSTS,
+                    "searchType": "hashtag",
+                    "resultsType": "posts"
+                }
+                with suppress_stdout_stderr():
+                    run_instagram = client.actor(ACTORS['instagram']).call(run_input=instagram_input)
+                break
+            except Exception as exc:
+                print(f"Instagram Search attempt {attempt} failed: {exc}")
+                if attempt == APIFY_CALL_RETRIES:
+                    print(f"Instagram Search failed after {APIFY_CALL_RETRIES} attempts")
+                sleep_time = APIFY_CALL_BACKOFF_SECONDS * (2 ** (attempt - 1))
+                time.sleep(sleep_time)
+        # Check if all searches failed
+        if not any([run_google, run_twitter, run_instagram]):
+            print(f"All platform searches failed for '{search_input}'")
             continue
 
-        # Retrieve dataset items (suppress actor logs)
-        dataset_items = []
+        # Process results from all platforms
         try:
-            with suppress_stdout_stderr():
-                dataset_items = list(client.dataset(run.get("defaultDatasetId", "")).iterate_items())
+            # Google results
+            google_items = []
+            if run_google and run_google.get("defaultDatasetId"):
+                google_items = list(client.dataset(run_google.get("defaultDatasetId")).iterate_items())
+            
+            # Twitter results
+            twitter_items = []
+            if run_twitter and run_twitter.get("defaultDatasetId"):
+                twitter_items = list(client.dataset(run_twitter.get("defaultDatasetId")).iterate_items())
+            
+            # Instagram results
+            instagram_items = []
+            if run_instagram and run_instagram.get("defaultDatasetId"):
+                instagram_items = list(client.dataset(run_instagram.get("defaultDatasetId")).iterate_items())
+            
         except Exception as exc:
-            print(f"Failed to read Apify dataset for '{search_input}': {exc}")
+            print(f"Failed to read datasets for '{search_input}': {exc}")
             continue
 
-        # Extract hashtags from organicResults, relatedQueries, snippets etc.
-        for item in dataset_items:
+        # Process Google results
+        for item in google_items:
             # Organic results
             organic = item.get("organicResults") or []
             for result in organic:
@@ -194,7 +258,7 @@ def get_trending_hashtags_for_list(hashtags, num_results=1):
                     val = result.get(field) if isinstance(result, dict) else None
                     if isinstance(val, str):
                         for m in hashtag_pattern.findall(val):
-                            trending.add(m)
+                            trending[m] = trending.get(m, 0) + 1
                 # Sometimes result fields themselves can be dicts (rare); attempt safe access
                 # (we intentionally don't crash if structure is unexpected)
 
@@ -210,19 +274,51 @@ def get_trending_hashtags_for_list(hashtags, num_results=1):
                     text_to_check = str(r)
                 if isinstance(text_to_check, str):
                     for m in hashtag_pattern.findall(text_to_check):
-                        trending.add(m)
+                        trending[m] = trending.get(m, 0) + 1
 
             # Some actors provide aiMode/aiOverview fields; scan them safely
             for ai_field in ("aiOverview", "aiModeResults", "aiOverviews"):
                 ai_val = item.get(ai_field)
                 if isinstance(ai_val, str):
                     for m in hashtag_pattern.findall(ai_val):
-                        trending.add(m)
+                        trending[m] = trending.get(m, 0) + 1
                 elif isinstance(ai_val, list):
                     for sub in ai_val:
                         if isinstance(sub, str):
                             for m in hashtag_pattern.findall(sub):
-                                trending.add(m)
+                                trending[m] = trending.get(m, 0) + 1
+                
+        # Process Twitter results
+        for tweet in twitter_items:
+            # Extract hashtags from tweet text and description
+            text = tweet.get('full_text', '') or tweet.get('text', '')
+            for m in hashtag_pattern.findall(text):
+                trending[m] = trending.get(m, 0) + 2  # Weight Twitter mentions more
+            # Also check tweet entities if available
+            entities = tweet.get('entities', {})
+            if entities and 'hashtags' in entities:
+                for hashtag in entities['hashtags']:
+                    tag = hashtag.get('text', '')
+                    if tag:
+                        tag_with_hash = f'#{tag}'
+                    trending[tag_with_hash] = trending.get(tag_with_hash, 0) + 2  # Weight Twitter entities more
+                        
+        # Process Instagram results
+        for post in instagram_items:
+            # Extract hashtags from post caption
+            caption = post.get('caption', '')
+            if caption:
+                for m in hashtag_pattern.findall(caption):
+                    trending[m] = trending.get(m, 0) + 2  # Weight Instagram mentions more
+            # Extract related hashtags
+            related_tags = post.get('relatedHashtags', []) or post.get('related_hashtags', [])
+            for tag in related_tags:
+                if isinstance(tag, str):
+                    tag_with_hash = f'#{tag.strip().replace("#", "")}'
+                    trending[tag_with_hash] = trending.get(tag_with_hash, 0) + 2  # Weight Instagram related tags more
+                elif isinstance(tag, dict) and 'name' in tag:
+                    tag_with_hash = f'#{tag["name"].strip().replace("#", "")}'
+                    trending[tag_with_hash] = trending.get(tag_with_hash, 0) + 2
 
         q_duration = time.time() - q_start
         print(f"Processed '{search_phrase}' ({processed}/{total_queries}) in {q_duration:.2f}s")
@@ -233,4 +329,14 @@ def get_trending_hashtags_for_list(hashtags, num_results=1):
     print(f"Average time per query: {avg:.2f} seconds")
     print(f"Total unique hashtags found: {len(trending)}\n")
 
-    return list(trending)
+    # Sort hashtags by frequency
+    sorted_hashtags = sorted(trending.items(), key=lambda x: x[1], reverse=True)
+
+    # Prepare statistics
+    total_unique = len(trending)
+    total_duration = time.time() - start_time
+    avg = total_duration / total_queries if total_queries else 0.0
+
+    # Return: top-N list, full sorted list (hashtag,count), total unique, total duration, avg per query
+    top_n = [hashtag for hashtag, _ in sorted_hashtags[:5]]
+    return top_n, sorted_hashtags, total_unique, total_duration, avg

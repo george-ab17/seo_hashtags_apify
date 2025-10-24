@@ -1,9 +1,3 @@
-from scraper import scrape_url
-# optional fallback scraper (non-fatal if missing)
-try:
-    from fallback_scraper import scrape_url_fallback
-except Exception:
-    scrape_url_fallback = None
 from keyword_extractor import extract_keywords
 from hashtag_generator import generate_hashtags
 from utils import save_json
@@ -11,27 +5,18 @@ from apify_trending_for_hashtags import get_trending_hashtags_for_list
 import os
 from dotenv import load_dotenv
 
-def main(url, provided_keywords=None):
+def main(topic, provided_keywords=None):
     # Load environment variables
     load_dotenv()
-    # Step 1: Scrape URL
-    content = scrape_url(url)
-    if not content.strip():
-        print("[INFO] Primary scraper returned empty or failed — attempting fallback scraper...")
-        if scrape_url_fallback:
-            try:
-                content = scrape_url_fallback(url)
-            except Exception as e:
-                print(f"[ERROR] Fallback scraper exception: {e}")
-        if not content.strip():
-            print("Error: No content could be scraped from the URL by either scraper. Please check the site or try another URL.")
-            return
+    if not topic.strip():
+        print("Error: Topic cannot be empty")
+        return
 
     # Step 2: Get keywords
     if provided_keywords:
         keywords = provided_keywords
     else:
-        keywords = extract_keywords(content)
+        keywords = extract_keywords(topic)
 
     # Normalize helper: convert dict-like items to best readable string
     def normalize_item(item):
@@ -62,7 +47,7 @@ def main(url, provided_keywords=None):
     keywords = [normalize_item(k) for k in keywords]
 
     # Step 3: Generate hashtags using Gemini LLM
-    hashtags_gemini = generate_hashtags((keywords, content))
+    hashtags_gemini = generate_hashtags((keywords, topic))
     hashtags_gemini = [normalize_item(h) for h in hashtags_gemini]
 
     # --- Debug: show pipeline inputs ---
@@ -74,65 +59,73 @@ def main(url, provided_keywords=None):
     # Step 4: Use Apify to validate only the Gemini-generated hashtags
     apify_key = os.getenv("APIFY_API_TOKEN")
     trending_hashtags = []
+    # Prepare defaults for full list and stats
+    full_sorted_list = []
+    total_unique = 0
+    total_duration = 0.0
+    avg = 0.0
+
     if apify_key:
         # Only use Gemini hashtags for Apify validation
         query_list = [h.strip() for h in hashtags_gemini if isinstance(h, str) and h.strip()]
-        
+
         print('\nSending Gemini hashtags to Apify for validation:')
         for i, q in enumerate(query_list, 1):
             print(f"  {i}. {q}")
 
-        trending_hashtags = get_trending_hashtags_for_list(query_list)
-    # Step 5: Use Gemini LLM to select the top 20 most relevant trending hashtags
-    if trending_hashtags:
-        def select_top_hashtags(trending_hashtags, keywords, content):
-            import google.generativeai as genai
-            genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-            prompt = (
-                "You are an expert SEO auditor and social media strategist.\n"
-                "Given the following list of trending hashtags, keywords, and company page content, "
-                "select the 20 most relevant, currently trending hashtags for a company SEO audit report.\n"
-                "All hashtags must meet company standards: professional, SEO-friendly, and suitable for enterprise use.\n"
-                "Avoid generic, unrelated, or overused hashtags.\n"
-                "Return only the hashtags, separated by commas, no extra text.\n\n"
-                f"Trending Hashtags:\n{', '.join(trending_hashtags)}\n\n"
-                f"Keywords:\n{', '.join(keywords)}\n\n"
-                f"Page Content:\n{content}\n"
-            )
-            try:
-                model = genai.GenerativeModel('gemini-2.5-flash')
-                response = model.generate_content(prompt, generation_config={"temperature": 0})
-                hashtags_llm = [tag.strip().replace(' ', '') if tag.strip().startswith('#') else '#' + tag.strip().replace(' ', '') for tag in response.text.split(",") if tag.strip()]
-                return hashtags_llm[:20]
-            except Exception as e:
-                print(f"Gemini LLM hashtag selection error: {e}")
-                return trending_hashtags[:20]
-        trending_hashtags = select_top_hashtags(trending_hashtags, keywords, content)
-    else:
-        print("Warning: No trending hashtags found from SerpApi.")
+        trending_result = get_trending_hashtags_for_list(query_list)
+        # The apify function returns (top_list, full_sorted_list, total_unique, total_duration, avg)
+        if isinstance(trending_result, tuple) and len(trending_result) >= 2:
+            trending_hashtags, full_sorted, total_unique, total_duration, avg = trending_result
 
-    # Step 6: Prepare final JSON output (only url, keywords, and Apify trending hashtags)
-    result = {
-        "url": url,
+            # Print only summary (no full hashtag list in console)
+            print(f"\nFinished processing all queries in {total_duration:.2f} seconds")
+            print(f"Average time per query: {avg:.2f} seconds")
+            print(f"Total unique hashtags found: {total_unique}\n")
+
+            # Prepare full sorted list for JSON (hashtag + count) but do not print all to console
+            full_sorted_list = [{"hashtag": tag, "count": count} for tag, count in full_sorted]
+        else:
+            # backward compatibility: if function returns simple list
+            trending_hashtags = trending_result
+    else:
+        print("\nNote: Apify validation unavailable (possibly due to API limits).")
+        trending_hashtags = []
+
+    # Step 6: Prepare final JSON output (topic, keywords, and Apify trending hashtags)
+    # Full result saved to disk (includes full list and stats)
+    result_full = {
+        "topic": topic,
+        "used_keywords": keywords,
+        "apify_trending_hashtags": trending_hashtags,
+        "apify_trending_hashtags_all": full_sorted_list,
+        "apify_total_unique": total_unique,
+        "apify_total_duration": total_duration,
+        "apify_avg_time_per_query": avg
+    }
+
+    # Minimal result to show in console (what you requested)
+    result_minimal = {
+        "topic": topic,
         "used_keywords": keywords,
         "apify_trending_hashtags": trending_hashtags
     }
 
-    # Step 7: Save JSON
-    save_json(result)
+    # Step 7: Save full JSON
+    save_json(result_full)
 
-    # Also print to console
+    # Print the minimal JSON to console for quick view
     import json
-    print(json.dumps(result, indent=4, ensure_ascii=False))
+    print(json.dumps(result_minimal, indent=4, ensure_ascii=False))
 
 if __name__ == "__main__":
     # Load environment variables
     load_dotenv()
-    # Get URL from user
-    url = input("Enter URL to scrape: ")
+    # Get topic from user
+    topic = input("Enter a topic to generate hashtags for: ")
     keywords_input = input("Enter keywords (comma-separated, or press Enter to skip): ").strip()
     if keywords_input:
         user_keywords = [kw.strip() for kw in keywords_input.split(",")]
     else:
         user_keywords = None
-    main(url, user_keywords)
+    main(topic, user_keywords)

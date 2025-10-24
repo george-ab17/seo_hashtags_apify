@@ -104,9 +104,9 @@
         <div class="card p-4 mb-4">
             <div class="row g-3">
                 <div class="col-md-6 col-lg-6">
-                    <label for="urlInput" class="form-label fw-semibold"><i class="fas fa-globe"></i> Target Website URL</label>
-                    <input type="url" id="urlInput" class="form-control" placeholder="https://example.com" />
-                    <small class="text-muted">Enter your website URL to analyze</small>
+                    <label for="topicInput" class="form-label fw-semibold">Topic</label>
+                    <input type="text" id="topicInput" class="form-control" placeholder="Enter a topic (e.g., Digital Marketing, AI Technology)" />
+                    <small class="text-muted">Enter the topic you want to generate hashtags for</small>
                 </div>
                 <div class="col-md-6 col-lg-6">
                     <label for="keywordsInput" class="form-label fw-semibold"><i class="fas fa-key"></i> Keywords (Optional)</label>
@@ -162,8 +162,8 @@
         }
 
         async function generateHashtags() {
-            const url = document.getElementById('urlInput').value.trim();
-            if (!url) return alert('Please enter a target website URL');
+            const topic = document.getElementById('topicInput').value.trim();
+            if (!topic) return alert('Please enter a topic');
 
             const keywordsInput = document.getElementById('keywordsInput').value.trim();
             const keywords = keywordsInput 
@@ -179,7 +179,7 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ 
-                        url: url, 
+                        topic: topic, 
                         provided_keywords: keywords
                     })
                 });

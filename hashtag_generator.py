@@ -7,8 +7,13 @@ load_dotenv()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 def generate_hashtags(keywords):
-    """
-    Generate 20 professional, SEO-friendly hashtags using Gemini API, using both keywords and cleaned HTML content.
+    """Generate 5 professional, SEO-friendly hashtags using Gemini API.
+    
+    Args:
+        keywords: List of keywords or tuple of (keywords, content)
+    
+    Returns:
+        List of 13 most relevant hashtags
     """
     # Accept both keywords and content
     if isinstance(keywords, tuple) and len(keywords) == 2:
@@ -26,10 +31,10 @@ input. Use exact keyword words or short, safe variants of those words (e.g., rem
 use CamelCase) and prefer tokens that appear in the Page Content.
 
 Requirements:
-- Return only hashtags, separated by commas, with NO extra commentary.
-- Use at most one or two short variations per keyword (e.g., "#Keyword", "#KeywordTips").
+- Return exactly 5 most relevant hashtags, separated by commas.
+- Ensure hashtags are highly specific to the topic and keywords.
+- Use professional, enterprise-friendly terms.
 - Do not include slang, emojis, or unrelated trending topics.
-- If you cannot find 20 grounded hashtags, return as many grounded hashtags as possible.
 
 Keywords:
 {', '.join(keywords)}
@@ -108,11 +113,11 @@ Output:
                     variant = '#' + body + 'Tips'
                     if variant not in derived:
                         derived.append(variant)
-                if len(derived) >= 20:
+                if len(derived) >= 5:
                     break
-            return derived[:20]
+            return derived[:5]
 
-        return cleaned[:20]
+        return cleaned[:5]
     except Exception as e:
         print(f"Gemini hashtag generation error: {e}")
         # deterministic fallback on error
@@ -128,6 +133,6 @@ Output:
             tag = '#' + body
             if tag not in derived:
                 derived.append(tag)
-            if len(derived) >= 20:
+            if len(derived) >= 13:
                 break
-        return derived[:20]
+        return derived[:13]

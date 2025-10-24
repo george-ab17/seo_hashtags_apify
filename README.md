@@ -4,10 +4,9 @@ A powerful Python tool that generates trending and relevant hashtags for SEO opt
 
 ## Features
 
-- Extracts relevant keywords from webpage content
-- Generates SEO-optimized hashtags using Google's Gemini AI
-- Verifies hashtag trending status using Apify's Google Search Scraper
-- Multiple fallback scraping mechanisms for reliable content extraction
+- Extracts relevant keywords from the provided topic/content
+- Generates SEO-optimized hashtags using Google's Gemini AI (now returns up to 13 hashtags)
+- Verifies hashtag trending status using Apify's scrapers (Google Search, Twitter, Instagram)
 - Smart content filtering and relevance checking
 - Enterprise-grade output suitable for professional use
 
@@ -37,21 +36,19 @@ Run the main script:
 python main.py
 ```
 
-You'll be prompted to:
-1. Enter a URL to analyze
-2. Optionally provide custom keywords
+You'll be prompted to enter a topic (not a URL) and optionally provide custom keywords.
 
 The script will:
-- Scrape the webpage content
-- Extract relevant keywords
-- Generate and verify trending hashtags
+- Extract relevant keywords for the topic
+- Generate up to 13 SEO-friendly hashtags using Gemini
+- Verify trending status across supported platforms via Apify
 - Save results to `output.json`
 
 ## Components
 
 - `main.py`: Primary script orchestrating the workflow
-- `scraper.py`: Main web content scraper
-- `fallback_scraper.py`: Robust fallback scraping mechanisms
+-- `hashtag_generator.py`: Hashtag generation using Gemini AI
+-- `apify_trending_for_hashtags.py`: Trending verification using Apify
 - `keyword_extractor.py`: AI-powered keyword extraction
 - `hashtag_generator.py`: Hashtag generation using Gemini AI
 - `apify_trending_for_hashtags.py`: Trending verification using Apify
@@ -59,15 +56,15 @@ The script will:
 ## Output
 
 Results are saved in `output.json` with:
-- Original URL
+- Topic
 - Extracted keywords
-- Verified trending hashtags
+- Verified trending hashtags (up to 13)
 
 ## Error Handling
 
-- Multiple fallback mechanisms for content scraping
-- Robust error handling for API failures
-- Automatic retries for failed requests
+- Robust error handling for API failures and retry logic for Apify calls
+
+Note: Reddit scraping was removed due to availability of the previous actor. Current Apify-supported scrapers used are Google Search, Twitter, and Instagram.
 
 ## License
 

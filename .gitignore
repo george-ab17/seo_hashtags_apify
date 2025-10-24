@@ -1,41 +1,32 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-env/
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
+*.pyo
+*.pyd
 
-# Virtual Environment
-venv/
-ENV/
+# Virtual env
+.venv/
 .env
 
-# IDE
+# IDE files
 .vscode/
 .idea/
 
-# Misc
+# OS files
 .DS_Store
-*.log
+Thumbs.db
+
+# Logs and outputs
+logs/
 output.json
 
-# Project specific
-*.pyc
-.coverage
-htmlcov/
+# Jupyter
+.ipynb_checkpoints/
+
+# Byte-compiled / distribution
+build/
+dist/
+*.egg-info/
+
+# node modules (if any)
+node_modules/

@@ -1,8 +1,5 @@
 google-genai
-requests
-beautifulsoup4
 python-dotenv
-selenium
 apify-client
 flask
 flask-cors
